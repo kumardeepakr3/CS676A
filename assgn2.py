@@ -8,11 +8,17 @@ import scipy.ndimage.filters as filters
 import matplotlib.pyplot as plt
 
 
+
+
 averageWindow = (5,5)
 detectThreshold = 0
 threshold = 1500
-neighborhood_size = 5
+neighborhood_size = 10
+patchSize = 16
 
+
+img1FeatureList = []
+img2FeatureList = []
 
 # From https://gist.github.com/teechap/43988d7dc107ef79637d
 def heatPlot(image):
@@ -67,12 +73,31 @@ def getGradientMatrix(grayImage):
 	gradX = cv2.Sobel(grayImage,cv2.CV_64F,1,0,ksize=5)  # x grad[1]
 	gradY = cv2.Sobel(grayImage,cv2.CV_64F,0,1,ksize=5)  # y grad[0]
 	gradMatrixForPixel = np.zeros(shape=(grayImage.shape[0], grayImage.shape[1], 4))
+	gradModDir = np.zeros(shape=(grayImage.shape[0], grayImage.shape[1], 2))
 	for i in range(imageLenY):
 		for j in range(imageLenX):
-			gradMatrixForPixel[i][j][0] = (gradX[i][j])**2
-			gradMatrixForPixel[i][j][3] = (gradY[i][j])**2
-			gradMatrixForPixel[i][j][1] = gradMatrixForPixel[i][j][2] = gradX[i][j] * gradY[i][j]
-	return gradMatrixForPixel
+			Ix, Iy = gradX[i][j], gradY[i][j]
+			gradMatrixForPixel[i][j][0] = Ix**2
+			gradMatrixForPixel[i][j][3] = Iy**2
+			gradMatrixForPixel[i][j][1] = gradMatrixForPixel[i][j][2] = Ix * Iy
+			
+			if(Ix == 0 and Iy == 0):
+				gradModDir[i][j][1] = 0
+				gradModDir[i][j][0] = 0
+			elif(Ix ==0):
+				gradModDir[i][j][1] = 90.0 if Iy>0 else 270.0
+				gradModDir[i][j][0] = math.sqrt(Ix**2 + Iy**2)
+			else:
+				degVal = math.degrees(math.atan(Iy/Ix))
+				if(Ix < 0):
+					gradModDir[i][j][1] = degVal + 180.0
+				elif(Iy < 0):
+					gradModDir[i][j][1] = degVal + 360.0
+				else:
+					gradModDir[i][j][1] = degVal
+				gradModDir[i][j][0] = math.sqrt(Ix**2 + Iy**2)
+
+	return (gradMatrixForPixel, gradModDir)
 
 
 def getFValue(gradMatrix):
@@ -94,32 +119,80 @@ def getFValue(gradMatrix):
 	return FMatrix
 
 
-if __name__ == "__main__":
-	file_name = sys.argv[1]
-	image = cv2.imread(file_name, 1)
+def getHogBin(subRegionMatrix):
+	lenX, lenY = subRegionMatrix.shape[1], subRegionMatrix.shape[0]
+	h = [0] * 16   #histogram list
+	diffAngle = 22.5
+	rangeCenterList = [] # [11.25, 33.75, ... 348.75]
+	for i in range(0,16):  # [0, 1, 2, 3, 4, .. 15]
+		rangeCenterList.append(i*22.5+11.25)
+	
+	for i in range(lenX):
+		for j in range(lenY):
+			magnitude = subRegionMatrix[i][j][0]
+			angle = subRegionMatrix[i][j][1]
+
+			#BINNING PROCESS
+			# if (angle <= 11.25 or angle >= 348.75):
+			if(angle>=0 and angle<=11.25):
+				h[0] += magnitude*((angle+11.25)/diffAngle)
+				h[15] += magnitude*((11.25-angle)/diffAngle)
+			elif (angle >=348.75):
+				h[15] += magnitude*((371.25-angle)/diffAngle)  # 371.25 = 348.75+22.5
+				h[0] += magnitude*((angle-348.75)/diffAngle)
+			else:
+				binNumber = int(angle/22.5)
+				if ( int((angle+11.25)/22.5) > binNumber):
+					rangeCenter = binNumber
+				else:
+					rangeCenter = binNumber - 1
+				h[rangeCenter] += magnitude*((rangeCenterList[rangeCenter+1]-angle)/diffAngle)
+				h[rangeCenter+1] += magnitude*((angle - rangeCenterList[rangeCenter])/diffAngle)
+	# print h
+	return h
+
+			
+
+
+def getHogVector(windowSubMatrix):
+	global patchSize
+	splitLen = patchSize/4
+	rangeListX = range(0, patchSize, splitLen)
+	rangeListY = range(0, patchSize, splitLen)
+	hogBinList = []
+	for i in [0, 1, 2, 3]:
+		for j in [0, 1, 2, 3]:
+			windowSubSubMatrix = windowSubMatrix[np.ix_(range(rangeListY[i], rangeListY[i]+splitLen), range(rangeListX[j], rangeListX[j]+splitLen))]
+			hogBinList.extend(getHogBin(windowSubSubMatrix))
+	return np.asarray(hogBinList)
+
+
+
+def generateHOGVector(gradModDir, interestPointsList, imageNumber):
+	global patchSize
+	global img2FeatureList
+	global img1FeatureList
+
+	for interestPoint in interestPointsList:
+		(xtop, ytop) = chooseProperTopCornerOfWindow(interestPoint[0], interestPoint[1], patchSize, patchSize, gradModDir.shape[1], gradModDir.shape[0])
+		windowSubMatrix = gradModDir[np.ix_(range(ytop, ytop+patchSize), range(xtop, xtop+patchSize))]
+		hogVectorOfWindow = getHogVector(windowSubMatrix)
+		if imageNumber == 1:
+			img1FeatureList.append((interestPoint, hogVectorOfWindow))
+		else:
+			img2FeatureList.append((interestPoint, hogVectorOfWindow))
+
+
+
+def generateAndDescribeInterestPoints(filename, image, imageNumber):
+	global threshold
 	grayImage = cv2.cvtColor(image,cv2.COLOR_BGR2GRAY)
-	print grayImage.shape
-	gradMatrix = getGradientMatrix(grayImage)
-	FValueMatrix = getFValue(gradMatrix)	
-	# print FValueMatrix
-	print FValueMatrix.shape
-	# heatPlot(FValueMatrix)
-
-
-	#Now Thresholding
+	(gradMatrix, gradModDir) = getGradientMatrix(grayImage)
+	FValueMatrix = getFValue(gradMatrix)
 	meanVal = np.mean(FValueMatrix)
-	print meanVal
 	newImg = FValueMatrix
 	variance = np.var(FValueMatrix)
-	# print "variance", variance
-	print "MaxVal", np.amax(FValueMatrix)
-	print "thresholdSum", str(meanVal+variance)
 	threshold = meanVal+math.sqrt(variance)
-	# cond1 = FValueMatrix <= 0.5*meanVal
-	# FValueMatrix[cond1] = 0
-	# cond2 = FValueMatrix > 0.5*meanVal
-	# FValueMatrix[cond2] = 255
-	# newImg = FValueMatrix.astype(np.uint8)
 
 	#Now Finding LocalMaxima
 	data_max = filters.maximum_filter(newImg, neighborhood_size)
@@ -131,18 +204,79 @@ if __name__ == "__main__":
 	labeled, num_objects = ndimage.label(maxima)
 	slices = ndimage.find_objects(labeled)
 	x, y = [], []
+	interestPointsList = []
 	cornerMatrix = np.zeros(shape=newImg.shape)
 	for dy,dx in slices:
 		x_center = (dx.start + dx.stop - 1)/2
-		x.append(x_center)
 		y_center = (dy.start + dy.stop - 1)/2    
-		y.append(y_center)
+		interestPointsList.append((x_center, y_center))
 		cv2.circle(image, (x_center, y_center), 2, (0,0,255), -1)
 		cornerMatrix[y_center][x_center] = 255
-
+	print "Length of InterestPointList= ", len(interestPointsList)
 	cornerMatrix = cornerMatrix.astype(np.uint8)
 	FValueMatrix = FValueMatrix.astype(np.uint8)
 
-	cv2.imwrite('BikecornerMatrix.png', cornerMatrix)
-	cv2.imwrite('BikefeaturePts.png', image)
+	cv2.imwrite('Ans1_Corner_'+filename, cornerMatrix)
+	cv2.imwrite('Ans1_Points_'+filename, image)
+
+	generateHOGVector(gradModDir, interestPointsList, imageNumber)
+
+
+
+if __name__ == "__main__":
+	file_name = sys.argv[1]
+	image = cv2.imread(file_name, 1)
+	generateAndDescribeInterestPoints(file_name, image, 1)
+	print img1FeatureList[0][0]
+	print len(img1FeatureList[0][1])
+	# grayImage = cv2.cvtColor(image,cv2.COLOR_BGR2GRAY)
+
+	# print grayImage.shape
+	# (gradMatrix, gradModDir) = getGradientMatrix(grayImage)
+	# print "GRADDIRDONE"
+	# FValueMatrix = getFValue(gradMatrix)	
+	# print FValueMatrix
+	# print FValueMatrix.shape
+	# heatPlot(FValueMatrix)
+
+
+	#Now Thresholding
+	# meanVal = np.mean(FValueMatrix)
+	# print meanVal
+	# newImg = FValueMatrix
+	# variance = np.var(FValueMatrix)
+	# print "variance", variance
+	# print "MaxVal", np.amax(FValueMatrix)
+	# print "thresholdSum", str(meanVal+variance)
+	# threshold = meanVal+math.sqrt(variance)
+	# cond1 = FValueMatrix <= 0.5*meanVal
+	# FValueMatrix[cond1] = 0
+	# cond2 = FValueMatrix > 0.5*meanVal
+	# FValueMatrix[cond2] = 255
+	# newImg = FValueMatrix.astype(np.uint8)
+
+	#Now Finding LocalMaxima
+	# data_max = filters.maximum_filter(newImg, neighborhood_size)
+	# maxima = (newImg == data_max)
+	# data_min = filters.minimum_filter(newImg, neighborhood_size)
+	# diff = ((data_max - data_min) > threshold)
+	# maxima[diff == 0] = 0
+
+	# labeled, num_objects = ndimage.label(maxima)
+	# slices = ndimage.find_objects(labeled)
+	# x, y = [], []
+	# cornerMatrix = np.zeros(shape=newImg.shape)
+	# for dy,dx in slices:
+	# 	x_center = (dx.start + dx.stop - 1)/2
+	# 	x.append(x_center)
+	# 	y_center = (dy.start + dy.stop - 1)/2    
+	# 	y.append(y_center)
+	# 	cv2.circle(image, (x_center, y_center), 2, (0,0,255), -1)
+	# 	cornerMatrix[y_center][x_center] = 255
+
+	# cornerMatrix = cornerMatrix.astype(np.uint8)
+	# FValueMatrix = FValueMatrix.astype(np.uint8)
+
+	# cv2.imwrite('ChesscornerMatrix.png', cornerMatrix)
+	# cv2.imwrite('ChessfeaturePts.png', image)
 	# cv2.imwrite('Graft2Img.png', newImg)
