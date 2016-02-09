@@ -34,7 +34,6 @@ def heatPlot(image):
 	x= raw_input()
 
 
-
 def chooseProperTopCornerOfWindow(pixelX, pixelY, windowX, windowY, imageLenX, imageLenY):
 	if(windowX > imageLenX or windowY > imageLenY):
 		print "ERROR IN WINDOWSIZE"
@@ -133,7 +132,6 @@ def getHogBin(subRegionMatrix):
 			angle = subRegionMatrix[i][j][1]
 
 			#BINNING PROCESS
-			# if (angle <= 11.25 or angle >= 348.75):
 			if(angle>=0 and angle<=11.25):
 				h[0] += magnitude*((angle+11.25)/diffAngle)
 				h[15] += magnitude*((11.25-angle)/diffAngle)
@@ -152,8 +150,6 @@ def getHogBin(subRegionMatrix):
 	return h
 
 			
-
-
 def getHogVector(windowSubMatrix):
 	global patchSize
 	splitLen = patchSize/4
@@ -165,7 +161,6 @@ def getHogVector(windowSubMatrix):
 			windowSubSubMatrix = windowSubMatrix[np.ix_(range(rangeListY[i], rangeListY[i]+splitLen), range(rangeListX[j], rangeListX[j]+splitLen))]
 			hogBinList.extend(getHogBin(windowSubSubMatrix))
 	return np.asarray(hogBinList)
-
 
 
 def generateHOGVector(gradModDir, interestPointsList, imageNumber):
@@ -181,7 +176,6 @@ def generateHOGVector(gradModDir, interestPointsList, imageNumber):
 			img1FeatureList.append((interestPoint, hogVectorOfWindow))
 		else:
 			img2FeatureList.append((interestPoint, hogVectorOfWindow))
-
 
 
 def generateAndDescribeInterestPoints(filename, image, imageNumber):
@@ -224,11 +218,15 @@ def generateAndDescribeInterestPoints(filename, image, imageNumber):
 
 
 if __name__ == "__main__":
-	file_name = sys.argv[1]
-	image = cv2.imread(file_name, 1)
-	generateAndDescribeInterestPoints(file_name, image, 1)
-	print img1FeatureList[0][0]
-	print len(img1FeatureList[0][1])
+	filename1 = sys.argv[1]
+	filename2 = sys.argv[2]
+
+	image1 = cv2.imread(filename1, 1)
+	image2 = cv2.imread(filename2, 1)
+	generateAndDescribeInterestPoints(filename1, image1, 1)
+	generateAndDescribeInterestPoints(filename2, image2, 2)
+	# print img1FeatureList[0][0]
+	# print len(img1FeatureList[0][1])
 	# grayImage = cv2.cvtColor(image,cv2.COLOR_BGR2GRAY)
 
 	# print grayImage.shape
