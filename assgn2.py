@@ -6,6 +6,7 @@ import scipy
 import scipy.ndimage as ndimage
 import scipy.ndimage.filters as filters
 import matplotlib.pyplot as plt
+from scipy.spatial.distance import cdist
 
 
 
@@ -177,6 +178,33 @@ def generateHOGVector(gradModDir, interestPointsList, imageNumber):
 		else:
 			img2FeatureList.append((interestPoint, hogVectorOfWindow))
 
+def calculateSSD():
+	global img1FeatureList
+	global img2FeatureList
+	img1FeatureVectorMatrix = np.zeros(shape=(256,))
+	img2FeatureVectorMatrix = np.zeros(shape=(256,))
+	
+	for featureTuple in img1FeatureList:
+		img1FeatureVectorMatrix = np.vstack([img1FeatureVectorMatrix, featureTuple[1]])
+	img1FeatureVectorMatrix = np.delete(img1FeatureVectorMatrix, 0, 0) # Remove the first row of zeros
+
+	for featureTuple in img2FeatureList:
+		img2FeatureVectorMatrix = np.vstack([img2FeatureVectorMatrix, featureTuple[1]])
+	img2FeatureVectorMatrix = np.delete(img2FeatureVectorMatrix, 0, 0) # Remove the first row of zeros
+
+	# print img1FeatureVectorMatrix
+	# print img1FeatureVectorMatrix.shape
+	# print img2FeatureVectorMatrix.shape
+
+	print "Calculating SSD Now"
+	ssdMatrix = cdist(img1FeatureVectorMatrix, img2FeatureVectorMatrix)
+	# print ssdMatrix
+	print "SSD DONE"
+	print "Shape of SSD Matrix=", ssdMatrix.shape
+	return ssdMatrix
+
+
+
 
 def generateAndDescribeInterestPoints(filename, image, imageNumber):
 	global threshold
@@ -206,6 +234,7 @@ def generateAndDescribeInterestPoints(filename, image, imageNumber):
 		interestPointsList.append((x_center, y_center))
 		cv2.circle(image, (x_center, y_center), 2, (0,0,255), -1)
 		cornerMatrix[y_center][x_center] = 255
+		
 	print "Length of InterestPointList= ", len(interestPointsList)
 	cornerMatrix = cornerMatrix.astype(np.uint8)
 	FValueMatrix = FValueMatrix.astype(np.uint8)
@@ -217,6 +246,44 @@ def generateAndDescribeInterestPoints(filename, image, imageNumber):
 
 
 
+#FOR SSD MATRIX colNum 
+# def thresholdSSD(ssdMatrix, img1, img2):
+# 	global img1FeatureList
+# 	global img2FeatureList
+# 	vis = np.concatenate((img1, img2), axis=1)
+
+# 	minIndexForRow = np.argmin(ssdMatrix, axis=1) #Get index of minimum value of each row
+
+# 	for i in range(len(minIndexForRow)):
+# 		minIndex = minIndexForRow[i]
+# 		(ximg1,yimg1) = img1FeatureList[i][0]
+# 		(ximg2,yimg2) = img2FeatureList[minIndex][0]
+# 		cv2.line(vis, (ximg1, yimg1), (ximg2+img1.shape[1], yimg2), (255,0,0))
+
+# 	cv2.imwrite('combined.png', vis)
+
+
+#FOR SSD MATRIX colNum 
+def thresholdSSD(ssdMatrix, img1, img2):
+	global img1FeatureList
+	global img2FeatureList
+	vis = np.concatenate((img1, img2), axis=1)
+
+	minIndexForRow = np.argmin(ssdMatrix, axis=1) #Get index of minimum value of each row
+
+	for i in range(len(minIndexForRow)):
+		vis = np.concatenate((img1, img2), axis=1)
+		minIndex = minIndexForRow[i]
+		(ximg1,yimg1) = img1FeatureList[i][0]
+		(ximg2,yimg2) = img2FeatureList[minIndex][0]
+		cv2.line(vis, (ximg1, yimg1), (ximg2+img1.shape[1], yimg2), (255,0,0), 2)
+		cv2.imwrite(str(i)+'combined.png', vis)
+
+
+
+
+
+
 if __name__ == "__main__":
 	filename1 = sys.argv[1]
 	filename2 = sys.argv[2]
@@ -225,6 +292,10 @@ if __name__ == "__main__":
 	image2 = cv2.imread(filename2, 1)
 	generateAndDescribeInterestPoints(filename1, image1, 1)
 	generateAndDescribeInterestPoints(filename2, image2, 2)
+	ssdMatrix = calculateSSD()
+	thresholdSSD(ssdMatrix, image1, image2)
+	print ssdMatrix
+
 	# print img1FeatureList[0][0]
 	# print len(img1FeatureList[0][1])
 	# grayImage = cv2.cvtColor(image,cv2.COLOR_BGR2GRAY)
