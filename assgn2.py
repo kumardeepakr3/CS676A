@@ -14,6 +14,7 @@ from scipy.spatial.distance import cdist
 averageWindow = (5,5)
 detectThreshold = 0
 threshold = 1500
+threshold_1=0.75
 neighborhood_size = 10
 patchSize = 16
 
@@ -21,7 +22,6 @@ patchSize = 16
 img1FeatureList = []
 img2FeatureList = []
 
-# From https://gist.github.com/teechap/43988d7dc107ef79637d
 def heatPlot(image):
 	lenX, lenY = image.shape[1], image.shape[0]
 	x = range(0, lenY)
@@ -239,28 +239,11 @@ def generateAndDescribeInterestPoints(filename, image, imageNumber):
 	cornerMatrix = cornerMatrix.astype(np.uint8)
 	FValueMatrix = FValueMatrix.astype(np.uint8)
 
-	cv2.imwrite('Ans1_Corner_'+filename, cornerMatrix)
-	cv2.imwrite('Ans1_Points_'+filename, image)
+	cv2.imwrite('Ans1_Corner_'+str(imageNumber)+'.jpg', cornerMatrix)
+	cv2.imwrite('Ans1_Points_'+str(imageNumber)+'.jpg', image)
 
 	generateHOGVector(gradModDir, interestPointsList, imageNumber)
 
-
-
-#FOR SSD MATRIX colNum 
-# def thresholdSSD(ssdMatrix, img1, img2):
-# 	global img1FeatureList
-# 	global img2FeatureList
-# 	vis = np.concatenate((img1, img2), axis=1)
-
-# 	minIndexForRow = np.argmin(ssdMatrix, axis=1) #Get index of minimum value of each row
-
-# 	for i in range(len(minIndexForRow)):
-# 		minIndex = minIndexForRow[i]
-# 		(ximg1,yimg1) = img1FeatureList[i][0]
-# 		(ximg2,yimg2) = img2FeatureList[minIndex][0]
-# 		cv2.line(vis, (ximg1, yimg1), (ximg2+img1.shape[1], yimg2), (255,0,0))
-
-# 	cv2.imwrite('combined.png', vis)
 
 
 #FOR SSD MATRIX colNum 
@@ -270,20 +253,16 @@ def thresholdSSD(ssdMatrix, img1, img2):
 	vis = np.concatenate((img1, img2), axis=1)
 
 	minIndexForRow = np.argmin(ssdMatrix, axis=1) #Get index of minimum value of each row
+	min2IndexForRow = ssdMatrix.argsort()[:,0:2]
 
 	for i in range(len(minIndexForRow)):
-		vis = np.concatenate((img1, img2), axis=1)
-		minIndex = minIndexForRow[i]
-		(ximg1,yimg1) = img1FeatureList[i][0]
-		(ximg2,yimg2) = img2FeatureList[minIndex][0]
-		cv2.line(vis, (ximg1, yimg1), (ximg2+img1.shape[1], yimg2), (255,0,0), 2)
-		cv2.imwrite(str(i)+'combined.png', vis)
+		if ssdMatrix[i][min2IndexForRow[i][0]]/ssdMatrix[i][min2IndexForRow[i][1]]<threshold_1:
+			(ximg1,yimg1) = img1FeatureList[i][0]
+			(ximg2,yimg2) = img2FeatureList[min2IndexForRow[i][0]][0]
+			cv2.line(vis, (ximg1, yimg1), (ximg2+img1.shape[1], yimg2), (255,0,0))
+	cv2.imwrite(str(i)+'combined.png', vis)
 
-
-
-
-
-
+	
 if __name__ == "__main__":
 	filename1 = sys.argv[1]
 	filename2 = sys.argv[2]
@@ -295,57 +274,3 @@ if __name__ == "__main__":
 	ssdMatrix = calculateSSD()
 	thresholdSSD(ssdMatrix, image1, image2)
 	print ssdMatrix
-
-	# print img1FeatureList[0][0]
-	# print len(img1FeatureList[0][1])
-	# grayImage = cv2.cvtColor(image,cv2.COLOR_BGR2GRAY)
-
-	# print grayImage.shape
-	# (gradMatrix, gradModDir) = getGradientMatrix(grayImage)
-	# print "GRADDIRDONE"
-	# FValueMatrix = getFValue(gradMatrix)	
-	# print FValueMatrix
-	# print FValueMatrix.shape
-	# heatPlot(FValueMatrix)
-
-
-	#Now Thresholding
-	# meanVal = np.mean(FValueMatrix)
-	# print meanVal
-	# newImg = FValueMatrix
-	# variance = np.var(FValueMatrix)
-	# print "variance", variance
-	# print "MaxVal", np.amax(FValueMatrix)
-	# print "thresholdSum", str(meanVal+variance)
-	# threshold = meanVal+math.sqrt(variance)
-	# cond1 = FValueMatrix <= 0.5*meanVal
-	# FValueMatrix[cond1] = 0
-	# cond2 = FValueMatrix > 0.5*meanVal
-	# FValueMatrix[cond2] = 255
-	# newImg = FValueMatrix.astype(np.uint8)
-
-	#Now Finding LocalMaxima
-	# data_max = filters.maximum_filter(newImg, neighborhood_size)
-	# maxima = (newImg == data_max)
-	# data_min = filters.minimum_filter(newImg, neighborhood_size)
-	# diff = ((data_max - data_min) > threshold)
-	# maxima[diff == 0] = 0
-
-	# labeled, num_objects = ndimage.label(maxima)
-	# slices = ndimage.find_objects(labeled)
-	# x, y = [], []
-	# cornerMatrix = np.zeros(shape=newImg.shape)
-	# for dy,dx in slices:
-	# 	x_center = (dx.start + dx.stop - 1)/2
-	# 	x.append(x_center)
-	# 	y_center = (dy.start + dy.stop - 1)/2    
-	# 	y.append(y_center)
-	# 	cv2.circle(image, (x_center, y_center), 2, (0,0,255), -1)
-	# 	cornerMatrix[y_center][x_center] = 255
-
-	# cornerMatrix = cornerMatrix.astype(np.uint8)
-	# FValueMatrix = FValueMatrix.astype(np.uint8)
-
-	# cv2.imwrite('ChesscornerMatrix.png', cornerMatrix)
-	# cv2.imwrite('ChessfeaturePts.png', image)
-	# cv2.imwrite('Graft2Img.png', newImg)
